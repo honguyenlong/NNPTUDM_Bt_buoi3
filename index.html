@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Product Dashboard</title>
+
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        tr[data-description] {
+            cursor: pointer;
+        }
+
+        tr[data-description]:hover::after {
+            content: attr(data-description);
+            position: absolute;
+            background: #333;
+            color: #fff;
+            padding: 8px;
+            border-radius: 5px;
+            max-width: 300px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+
+        img.thumb {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body class="container mt-4">
+
+    <h2 class="mb-3">📦 Product Dashboard</h2>
+
+    <div class="d-flex gap-2 mb-3">
+        <input id="searchInput" class="form-control w-25" placeholder="Search by title...">
+
+        <select id="pageSize" class="form-select w-auto">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+        </select>
+
+        <button class="btn btn-success" onclick="exportCSV()">⬇ Export CSV</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal">
+            ➕ Create
+        </button>
+    </div>
+
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th onclick="sortBy('title')">Title ⬍</th>
+                <th onclick="sortBy('price')">Price ⬍</th>
+                <th>Category</th>
+                <th>Images</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <nav>
+        <ul class="pagination" id="pagination"></ul>
+    </nav>
+
+    <!-- DETAIL MODAL -->
+    <div class="modal fade" id="detailModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Product Detail</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="detailId">
+
+                    <input id="detailTitle" class="form-control mb-2">
+                    <input id="detailPrice" type="number" class="form-control mb-2">
+                    <textarea id="detailDescription" class="form-control mb-2"></textarea>
+                    <input id="detailImage" class="form-control mb-2">
+
+                    <button class="btn btn-warning" onclick="updateProduct()">💾 Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE MODAL -->
+    <div class="modal fade" id="createModal">
+        <div class="modal-dialog">
+<div class="modal-content">
+                <div class="modal-header">
+                    <h5>Create Product</h5>
+                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input id="createTitle" class="form-control mb-2" placeholder="Title">
+                    <input id="createPrice" type="number" class="form-control mb-2" placeholder="Price">
+                    <textarea id="createDescription" class="form-control mb-2" placeholder="Description"></textarea>
+                    <input id="createImage" class="form-control mb-2" placeholder="Image URL">
+                    <input id="createCategory" type="number" class="form-control mb-2" placeholder="CategoryId (1-5)">
+
+                    <button class="btn btn-success" onclick="createProduct()">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'https://api.escuelajs.co/api/v1/products';
+
+        let products = [];
+        let filtered = [];
+        let page = 1;
+        let pageSize = 10;
+        let sortField = '';
+        let sortAsc = true;
+
+        async function loadData() {
+            const res = await fetch(`${API}?offset=0&limit=100`);
+            products = await res.json();
+            filtered = products;
+            render();
+        }
+
+        function render() {
+            let start = (page - 1) * pageSize;
+            let data = filtered.slice(start, start + pageSize);
+
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            data.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.dataset.description = p.description;
+                tr.onclick = () => openDetail(p);
+
+                tr.innerHTML = `
+      <td>${p.id}</td>
+      <td>${p.title}</td>
+      <td>$${p.price}</td>
+      <td>${p.category?.name}</td>
+      <td><img src="${p.images[0]}" class="thumb"></td>
+    `;
+                tbody.appendChild(tr);
+            });
+
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const total = Math.ceil(filtered.length / pageSize);
+            const ul = document.getElementById('pagination');
+            ul.innerHTML = '';
+
+            for (let i = 1; i <= total; i++) {
+                ul.innerHTML += `
+      <li class="page-item ${i === page ? 'active' : ''}">
+        <button class="page-link" onclick="page=${i};render()">${i}</button>
+      </li>
+    `;
+            }
+        }
+
+        document.getElementById('searchInput').addEventListener('input', e => {
+            filtered = products.filter(p =>
+                p.title.toLowerCase().includes(e.target.value.toLowerCase())
+            );
+            page = 1;
+            render();
+        });
+
+        document.getElementById('pageSize').addEventListener('change', e => {
+            pageSize = +e.target.value;
+page = 1;
+            render();
+        });
+
+        function sortBy(field) {
+            sortAsc = sortField === field ? !sortAsc : true;
+            sortField = field;
+
+            filtered.sort((a, b) =>
+                sortAsc ? a[field] > b[field] : a[field] < b[field]
+            );
+            render();
+        }
+
+        function exportCSV() {
+            let csv = 'id,title,price,category\n';
+            filtered.forEach(p => {
+                csv += `${p.id},"${p.title}",${p.price},"${p.category?.name}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'products.csv';
+            a.click();
+        }
+
+        function openDetail(p) {
+            detailId.value = p.id;
+            detailTitle.value = p.title;
+            detailPrice.value = p.price;
+            detailDescription.value = p.description;
+            detailImage.value = p.images[0];
+
+            new bootstrap.Modal('#detailModal').show();
+        }
+
+        async function updateProduct() {
+            await fetch(`${API}/${detailId.value}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: detailTitle.value,
+                    price: detailPrice.value,
+                    description: detailDescription.value,
+                    images: [detailImage.value],
+                    categoryId: 1
+                })
+            });
+            alert('Updated!');
+            loadData();
+        }
+
+        async function createProduct() {
+            await fetch(API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: createTitle.value,
+                    price: createPrice.value,
+                    description: createDescription.value,
+                    images: [createImage.value],
+                    categoryId: createCategory.value
+                })
+            });
+            alert('Created!');
+            loadData();
+        }
+
+        loadData();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
